@@ -1,17 +1,12 @@
-#include <ST7735.h>
+#include "stm32f4xx_hal.h"
+#include "ST7735.h"
+#include "malloc.h"
+#include "string.h"
 
+#define DELAY 0x80
 
-int16_t _width;       ///< Display width as modified by current rotation
-int16_t _height;      ///< Display height as modified by current rotation
-int16_t cursor_x;     ///< x location to start print()ing text
-int16_t cursor_y;     ///< y location to start print()ing text
-uint8_t rotation;     ///< Display rotation (0 thru 3)
-uint8_t _colstart;   ///< Some displays need this changed to offset
-uint8_t _rowstart;       ///< Some displays need this changed to offset
-uint8_t _xstart;
-uint8_t _ystart;
-
-  const uint8_t
+// based on Adafruit ST7735 library for Arduino
+static const uint8_t
   init_cmds1[] = {            // Init for 7735R, part 1 (red or green tab)
     15,                       // 15 commands in list:
     ST7735_SWRESET,   DELAY,  //  1: Software reset, 0 args, w/delay
@@ -38,12 +33,14 @@ uint8_t _ystart;
       0x00,                   //     Boost frequency
     ST7735_PWCTR4 , 2      ,  // 10: Power control, 2 args, no delay:
       0x8A,                   //     BCLK/2, Opamp current small & Medium low
-      0x2A,  
+      0x2A,
     ST7735_PWCTR5 , 2      ,  // 11: Power control, 2 args, no delay:
       0x8A, 0xEE,
     ST7735_VMCTR1 , 1      ,  // 12: Power control, 1 arg, no delay:
       0x0E,
     ST7735_INVOFF , 0      ,  // 13: Don't invert display, no args, no delay
+    ST7735_MADCTL , 1      ,  // 14: Memory access control (directions), 1 arg:
+      ST7735_ROTATION,        //     row addr/col addr, bottom to top refresh
     ST7735_COLMOD , 1      ,  // 15: set color mode, 1 arg, no delay:
       0x05 },                 //     16-bit color
 
@@ -72,12 +69,12 @@ uint8_t _ystart;
 
   init_cmds3[] = {            // Init for 7735R, part 3 (red or green tab)
     4,                        //  4 commands in list:
-    ST7735_GMCTRP1, 16      , //  1: Magical unicorn dust, 16 args, no delay:
+    ST7735_GMCTRP1, 16      , //  1: Gamma Adjustments (pos. polarity), 16 args, no delay:
       0x02, 0x1c, 0x07, 0x12,
       0x37, 0x32, 0x29, 0x2d,
       0x29, 0x25, 0x2B, 0x39,
       0x00, 0x01, 0x03, 0x10,
-    ST7735_GMCTRN1, 16      , //  2: Sparkles and rainbows, 16 args, no delay:
+    ST7735_GMCTRN1, 16      , //  2: Gamma Adjustments (neg. polarity), 16 args, no delay:
       0x03, 0x1d, 0x07, 0x06,
       0x2E, 0x2C, 0x29, 0x2D,
       0x2E, 0x2E, 0x37, 0x3F,
@@ -87,37 +84,31 @@ uint8_t _ystart;
     ST7735_DISPON ,    DELAY, //  4: Main screen turn on, no args w/delay
       100 };                  //     100 ms delay
 
-void ST7735_Select()
-{
-    HAL_GPIO_WritePin(CS_PORT, CS_PIN, GPIO_PIN_RESET);
+static void ST7735_Select() {
+    HAL_GPIO_WritePin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, GPIO_PIN_RESET);
 }
 
-void ST7735_Unselect()
-{
-    HAL_GPIO_WritePin(CS_PORT, CS_PIN, GPIO_PIN_SET);
+void ST7735_Unselect() {
+    HAL_GPIO_WritePin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, GPIO_PIN_SET);
 }
 
-void ST7735_Reset()
-{
-    HAL_GPIO_WritePin(RST_PORT, RST_PIN, GPIO_PIN_RESET);
+static void ST7735_Reset() {
+    HAL_GPIO_WritePin(ST7735_RES_GPIO_Port, ST7735_RES_Pin, GPIO_PIN_RESET);
     HAL_Delay(5);
-    HAL_GPIO_WritePin(RST_PORT, RST_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(ST7735_RES_GPIO_Port, ST7735_RES_Pin, GPIO_PIN_SET);
 }
 
-  void ST7735_WriteCommand(uint8_t cmd)
-  {
-    HAL_GPIO_WritePin(DC_PORT, DC_PIN, GPIO_PIN_RESET);
+static void ST7735_WriteCommand(uint8_t cmd) {
+    HAL_GPIO_WritePin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_RESET);
     HAL_SPI_Transmit(&ST7735_SPI_PORT, &cmd, sizeof(cmd), HAL_MAX_DELAY);
 }
 
-void ST7735_WriteData(uint8_t* buff, size_t buff_size)
-{
-    HAL_GPIO_WritePin(DC_PORT, DC_PIN, GPIO_PIN_SET);
+static void ST7735_WriteData(uint8_t* buff, size_t buff_size) {
+    HAL_GPIO_WritePin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_SET);
     HAL_SPI_Transmit(&ST7735_SPI_PORT, buff, buff_size, HAL_MAX_DELAY);
 }
 
-void DisplayInit(const uint8_t *addr)
-{
+static void ST7735_ExecuteCommandList(const uint8_t *addr) {
     uint8_t numCommands, numArgs;
     uint16_t ms;
 
@@ -143,114 +134,33 @@ void DisplayInit(const uint8_t *addr)
     }
 }
 
-void ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
-{
+static void ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
     // column address set
     ST7735_WriteCommand(ST7735_CASET);
-    uint8_t data[] = { 0x00, x0 + _xstart, 0x00, x1 + _xstart };
+    uint8_t data[] = { 0x00, x0 + ST7735_XSTART, 0x00, x1 + ST7735_XSTART };
     ST7735_WriteData(data, sizeof(data));
 
     // row address set
     ST7735_WriteCommand(ST7735_RASET);
-    data[1] = y0 + _ystart;
-    data[3] = y1 + _ystart;
+    data[1] = y0 + ST7735_YSTART;
+    data[3] = y1 + ST7735_YSTART;
     ST7735_WriteData(data, sizeof(data));
 
     // write to RAM
     ST7735_WriteCommand(ST7735_RAMWR);
 }
 
-void ST7735_Init(uint8_t rotation)
-{
+void ST7735_Init() {
     ST7735_Select();
     ST7735_Reset();
-    DisplayInit(init_cmds1);
-    DisplayInit(init_cmds2);
-    DisplayInit(init_cmds3);
-#if ST7735_IS_160X80
-    _colstart = 24;
-    _rowstart = 0;
- /*****  IF Doesn't work, remove the code below (before #elif) *****/
-    uint8_t data = 0xC0;
-    ST7735_Select();
-    ST7735_WriteCommand(ST7735_MADCTL);
-    ST7735_WriteData(&data,1);
+    ST7735_ExecuteCommandList(init_cmds1);
+    ST7735_ExecuteCommandList(init_cmds2);
+    ST7735_ExecuteCommandList(init_cmds3);
     ST7735_Unselect();
-
-#elif ST7735_IS_128X128
-    _colstart = 2;
-    _rowstart = 3;
-#else
-    _colstart = 0;
-    _rowstart = 0;
-#endif
-    ST7735_SetRotation (rotation);
-    ST7735_Unselect();
-
-}
-
-void ST7735_SetRotation(uint8_t m)
-{
-
-  uint8_t madctl = 0;
-
-  rotation = m % 4; // can't be higher than 3
-
-  switch (rotation)
-  {
-  case 0:
-#if ST7735_IS_160X80
-	  madctl = ST7735_MADCTL_MX | ST7735_MADCTL_MY | ST7735_MADCTL_BGR;
-#else
-      madctl = ST7735_MADCTL_MX | ST7735_MADCTL_MY | ST7735_MADCTL_RGB;
-      _height = ST7735_HEIGHT;
-      _width = ST7735_WIDTH;
-      _xstart = _colstart;
-      _ystart = _rowstart;
-#endif
-    break;
-  case 1:
-#if ST7735_IS_160X80
-	  madctl = ST7735_MADCTL_MY | ST7735_MADCTL_MV | ST7735_MADCTL_BGR;
-#else
-      madctl = ST7735_MADCTL_MY | ST7735_MADCTL_MV | ST7735_MADCTL_RGB;
-      _width = ST7735_HEIGHT;
-      _height = ST7735_WIDTH;
-    _ystart = _colstart;
-    _xstart = _rowstart;
-#endif
-    break;
-  case 2:
-#if ST7735_IS_160X80
-	  madctl = ST7735_MADCTL_BGR;
-#else
-      madctl = ST7735_MADCTL_RGB;
-      _height = ST7735_HEIGHT;
-      _width = ST7735_WIDTH;
-    _xstart = _colstart;
-    _ystart = _rowstart;
-#endif
-    break;
-  case 3:
-#if ST7735_IS_160X80
-	  madctl = ST7735_MADCTL_MX | ST7735_MADCTL_MV | ST7735_MADCTL_BGR;
-#else
-      madctl = ST7735_MADCTL_MX | ST7735_MADCTL_MV | ST7735_MADCTL_RGB;
-      _width = ST7735_HEIGHT;
-      _height = ST7735_WIDTH;
-    _ystart = _colstart;
-    _xstart = _rowstart;
-#endif
-    break;
-  }
-  ST7735_Select();
-  ST7735_WriteCommand(ST7735_MADCTL);
-  ST7735_WriteData(&madctl,1);
-  ST7735_Unselect();
 }
 
 void ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {
-    if((x >= _width) || (y >= _height))
+    if((x >= ST7735_WIDTH) || (y >= ST7735_HEIGHT))
         return;
 
     ST7735_Select();
@@ -262,7 +172,7 @@ void ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {
     ST7735_Unselect();
 }
 
-void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor) {
+static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor) {
     uint32_t i, b, j;
 
     ST7735_SetAddressWindow(x, y, x+font.width-1, y+font.height-1);
@@ -281,14 +191,31 @@ void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t co
     }
 }
 
+/*
+Simpler (and probably slower) implementation:
+
+static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color) {
+    uint32_t i, b, j;
+
+    for(i = 0; i < font.height; i++) {
+        b = font.data[(ch - 32) * font.height + i];
+        for(j = 0; j < font.width; j++) {
+            if((b << j) & 0x8000)  {
+                ST7735_DrawPixel(x + j, y + i, color);
+            }
+        }
+    }
+}
+*/
+
 void ST7735_WriteString(uint16_t x, uint16_t y, const char* str, FontDef font, uint16_t color, uint16_t bgcolor) {
     ST7735_Select();
 
     while(*str) {
-        if(x + font.width >= _width) {
+        if(x + font.width >= ST7735_WIDTH) {
             x = 0;
             y += font.height;
-            if(y + font.height >= _height) {
+            if(y + font.height >= ST7735_HEIGHT) {
                 break;
             }
 
@@ -307,17 +234,17 @@ void ST7735_WriteString(uint16_t x, uint16_t y, const char* str, FontDef font, u
     ST7735_Unselect();
 }
 
-void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
-{
-    if((x >= _width) || (y >= _height)) return;
-    if((x + w - 1) >= _width) w = _width - x;
-    if((y + h - 1) >= _height) h = _height - y;
+void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+    // clipping
+    if((x >= ST7735_WIDTH) || (y >= ST7735_HEIGHT)) return;
+    if((x + w - 1) >= ST7735_WIDTH) w = ST7735_WIDTH - x;
+    if((y + h - 1) >= ST7735_HEIGHT) h = ST7735_HEIGHT - y;
 
     ST7735_Select();
     ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
 
     uint8_t data[] = { color >> 8, color & 0xFF };
-    HAL_GPIO_WritePin(DC_PORT, DC_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_SET);
     for(y = h; y > 0; y--) {
         for(x = w; x > 0; x--) {
             HAL_SPI_Transmit(&ST7735_SPI_PORT, data, sizeof(data), HAL_MAX_DELAY);
@@ -327,10 +254,41 @@ void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16
     ST7735_Unselect();
 }
 
+void ST7735_FillRectangleFast(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+    // clipping
+    if((x >= ST7735_WIDTH) || (y >= ST7735_HEIGHT)) return;
+    if((x + w - 1) >= ST7735_WIDTH) w = ST7735_WIDTH - x;
+    if((y + h - 1) >= ST7735_HEIGHT) h = ST7735_HEIGHT - y;
+
+    ST7735_Select();
+    ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
+
+    // Prepare whole line in a single buffer
+    uint8_t pixel[] = { color >> 8, color & 0xFF };
+    uint8_t *line = malloc(w * sizeof(pixel));
+    for(x = 0; x < w; ++x)
+    	memcpy(line + x * sizeof(pixel), pixel, sizeof(pixel));
+
+    HAL_GPIO_WritePin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, GPIO_PIN_SET);
+    for(y = h; y > 0; y--)
+        HAL_SPI_Transmit(&ST7735_SPI_PORT, line, w * sizeof(pixel), HAL_MAX_DELAY);
+
+    free(line);
+    ST7735_Unselect();
+}
+
+void ST7735_FillScreen(uint16_t color) {
+    ST7735_FillRectangle(0, 0, ST7735_WIDTH, ST7735_HEIGHT, color);
+}
+
+void ST7735_FillScreenFast(uint16_t color) {
+    ST7735_FillRectangleFast(0, 0, ST7735_WIDTH, ST7735_HEIGHT, color);
+}
+
 void ST7735_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data) {
-    if((x >= _width) || (y >= _height)) return;
-    if((x + w - 1) >= _width) return;
-    if((y + h - 1) >= _height) return;
+    if((x >= ST7735_WIDTH) || (y >= ST7735_HEIGHT)) return;
+    if((x + w - 1) >= ST7735_WIDTH) return;
+    if((y + h - 1) >= ST7735_HEIGHT) return;
 
     ST7735_Select();
     ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
@@ -344,4 +302,10 @@ void ST7735_InvertColors(bool invert) {
     ST7735_Unselect();
 }
 
-
+void ST7735_SetGamma(uint8_t gamma)
+{
+	ST7735_Select();
+	ST7735_WriteCommand(ST7735_GAMSET);
+	ST7735_WriteData(&gamma, sizeof(gamma));
+	ST7735_Unselect();
+}

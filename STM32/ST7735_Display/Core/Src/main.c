@@ -22,8 +22,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
 #include "ST7735.h"
 #include "GFX_FUNCTIONS.h"
+#include "fonts.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -91,10 +93,7 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-
-  ST7735_Init(0);
-  fillScreen(BLACK);
-//  testAll();
+  ST7735_Init();
 
 
   /* USER CODE END 2 */
@@ -103,29 +102,26 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  ST7735_FillScreen(ST7735_BLACK);
+	    ST7735_WriteString(0, 0, "MicroPeta", Font_7x10, ST7735_RED, ST7735_BLACK);
+	    ST7735_WriteString(0, 3*10, "by Nizar Mohideen", Font_11x18, ST7735_GREEN, ST7735_BLACK);
+	    ST7735_WriteString(0, 3*10+3*18, "March 2023", Font_16x26, ST7735_BLUE, ST7735_BLACK);
+	    HAL_Delay(3000);
+	    ST7735_FillScreen(ST7735_BLACK);
+	    drawCircle(50, 55, 20, ST7735_GREEN);
+	    drawCircle(50, 55, 21, ST7735_GREEN);
+	    drawCircle(50, 55, 22, ST7735_GREEN);
+	    drawCircle(50, 55, 23, ST7735_GREEN);
+	    drawCircle(50, 55, 24, ST7735_GREEN);
+	    drawCircle(50, 55, 25, ST7735_RED);
+	    drawCircle(50, 55, 26, ST7735_RED);
+	    drawCircle(50, 55, 27, ST7735_RED);
+	    drawCircle(50, 55, 28, ST7735_RED);
+	    HAL_Delay(4000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-	  ST7735_SetRotation(0);
-	  ST7735_WriteString(0, 0, "HELLO", Font_11x18, RED,BLACK);
-	  HAL_Delay(1000);
-	  fillScreen(BLACK);
-
-	  ST7735_SetRotation(1);
-	  ST7735_WriteString(0, 0, "WORLD", Font_11x18, GREEN,BLACK);
-	  HAL_Delay(1000);
-	  fillScreen(BLACK);
-
-	  ST7735_SetRotation(2);
-	  ST7735_WriteString(0, 0, "FROM", Font_11x18, BLUE,BLACK);
-	  HAL_Delay(1000);
-	  fillScreen(BLACK);
-
-	  ST7735_SetRotation(3);
-	  ST7735_WriteString(0, 0, "ControllersTech", Font_16x26, YELLOW,BLACK);
-	  HAL_Delay(1000);
-	  fillScreen(BLACK);
   }
   /* USER CODE END 3 */
 }
@@ -153,7 +149,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 84;
+  RCC_OscInitStruct.PLL.PLLN = 72;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -194,12 +190,12 @@ static void MX_SPI1_Init(void)
   /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.Direction = SPI_DIRECTION_1LINE;
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -231,24 +227,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_10, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : PB0 PB6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_6;
+  /*Configure GPIO pins : PB0 PB1 PB10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_10;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PA9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */

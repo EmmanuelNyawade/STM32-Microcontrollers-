@@ -1,10 +1,3 @@
-/*
- * GFX_FUNCTIONS.h
- *
- *  Created on: 30-Oct-2020
- *      Author: meh
- */
-
 #ifndef INC_GFX_FUNCTIONS_H_
 #define INC_GFX_FUNCTIONS_H_
 
@@ -24,18 +17,5 @@ void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16
 void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color);
 void drawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t color);
 void fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t color);
-void fillScreen(uint16_t color);
-void testLines(uint16_t color);
-void testFastLines(uint16_t color1, uint16_t color2);
-void testRects(uint16_t color) ;
-void testFilledRects(uint16_t color1, uint16_t color2);
-void testFilledCircles(uint8_t radius, uint16_t color);
-void testCircles(uint8_t radius, uint16_t color);
-void testTriangles();
-void testFilledTriangles();
-void testRoundRects();
-void testFilledRoundRects();
-void testFillScreen();
-void testAll (void);
 
-#endif /* INC_GFX_FUNCTIONS_H_ */
+#endif
